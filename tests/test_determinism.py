@@ -43,3 +43,67 @@ def test_receipt_determinism(tmp_path: Path, monkeypatch) -> None:
     receipt_b = build_receipt_from_snapshot(snapshot_path)
 
     assert canonical_json_bytes(receipt_a) == canonical_json_bytes(receipt_b)
+
+
+def test_bundle_determinism(monkeypatch) -> None:
+    monkeypatch.setenv("BLUX_DETERMINISTIC_TIMESTAMP", "2024-01-01T00:00:00Z")
+
+    from blux_system.core import make_snapshot, make_receipt
+
+    snapshot_a = make_snapshot(
+        inputs=[{"path": "inputs/a.txt", "hash": "sha256:aaa", "size": 1}],
+        outputs=[{"path": "outputs/z.txt", "hash": "sha256:zzz", "size": 2}],
+        output_bundles=[
+            {
+                "bundle_id": "bundle-b",
+                "files": [
+                    {"path": "outputs/b.txt", "hash": "sha256:bbb", "size": 3},
+                    {"path": "outputs/a.txt", "hash": "sha256:aaa", "size": 4},
+                ],
+            },
+            {
+                "bundle_id": "bundle-a",
+                "files": [
+                    {"path": "outputs/c.txt", "hash": "sha256:ccc", "size": 5},
+                ],
+            },
+        ],
+        patch_bundles=[
+            {
+                "bundle_id": "patch-b",
+                "base_path": "inputs/a.txt",
+                "patches": [{"path": "outputs/a.patch", "hash": "sha256:ppp", "size": 6}],
+                "outputs": [{"path": "outputs/a.out", "hash": "sha256:ooo", "size": 7}],
+            }
+        ],
+    )
+    snapshot_b = make_snapshot(
+        inputs=[{"path": "inputs/a.txt", "hash": "sha256:aaa", "size": 1}],
+        outputs=[{"path": "outputs/z.txt", "hash": "sha256:zzz", "size": 2}],
+        output_bundles=[
+            {
+                "bundle_id": "bundle-a",
+                "files": [
+                    {"path": "outputs/c.txt", "hash": "sha256:ccc", "size": 5},
+                ],
+            },
+            {
+                "bundle_id": "bundle-b",
+                "files": [
+                    {"path": "outputs/a.txt", "hash": "sha256:aaa", "size": 4},
+                    {"path": "outputs/b.txt", "hash": "sha256:bbb", "size": 3},
+                ],
+            },
+        ],
+        patch_bundles=[
+            {
+                "bundle_id": "patch-b",
+                "base_path": "inputs/a.txt",
+                "patches": [{"path": "outputs/a.patch", "hash": "sha256:ppp", "size": 6}],
+                "outputs": [{"path": "outputs/a.out", "hash": "sha256:ooo", "size": 7}],
+            }
+        ],
+    )
+
+    assert canonical_json_bytes(snapshot_a) == canonical_json_bytes(snapshot_b)
+    assert canonical_json_bytes(make_receipt(snapshot_a)) == canonical_json_bytes(make_receipt(snapshot_b))

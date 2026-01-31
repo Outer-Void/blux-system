@@ -3,7 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from blux_system.core import build_receipt_from_snapshot, build_snapshot_from_dirs, canonical_json_bytes
+from blux_system.core import (
+    build_receipt_from_snapshot,
+    build_replay_report,
+    build_snapshot_from_dirs,
+    canonical_json_bytes,
+)
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -28,6 +33,15 @@ def receipt_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def replay_command(args: argparse.Namespace) -> int:
+    receipt_path = Path(args.receipt)
+    root_dir = Path(args.root)
+    root_dir.mkdir(parents=True, exist_ok=True)
+    report = build_replay_report(receipt_path, root_dir)
+    _write_json(root_dir / "replay_report.json", report)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="blux-system", description="BLUX deterministic snapshots and receipts")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -41,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
     receipt_parser.add_argument("--snapshot", required=True, help="Snapshot file")
     receipt_parser.add_argument("--out", dest="output_dir", required=True, help="Output directory")
     receipt_parser.set_defaults(func=receipt_command)
+
+    replay_parser = subparsers.add_parser("replay", help="Replay and verify receipt data")
+    replay_parser.add_argument("--receipt", required=True, help="Receipt file")
+    replay_parser.add_argument("--root", required=True, help="Root directory for outputs")
+    replay_parser.set_defaults(func=replay_command)
 
     return parser
 
