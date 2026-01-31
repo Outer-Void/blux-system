@@ -107,3 +107,59 @@ def test_bundle_determinism(monkeypatch) -> None:
 
     assert canonical_json_bytes(snapshot_a) == canonical_json_bytes(snapshot_b)
     assert canonical_json_bytes(make_receipt(snapshot_a)) == canonical_json_bytes(make_receipt(snapshot_b))
+
+
+def test_receipt_run_graph_determinism(monkeypatch) -> None:
+    monkeypatch.setenv("BLUX_DETERMINISTIC_TIMESTAMP", "2024-01-01T00:00:00Z")
+
+    from blux_system.core import make_receipt, make_snapshot
+
+    snapshot = make_snapshot(
+        inputs=[{"path": "inputs/a.txt", "hash": "sha256:aaa", "size": 1}],
+        outputs=[{"path": "outputs/z.txt", "hash": "sha256:zzz", "size": 2}],
+    )
+
+    receipt_a = make_receipt(
+        snapshot,
+        policy_pack={"id": "policy-pack", "version": "1.2.3"},
+        reasoning_pack={"id": "reason-pack", "version": "4.5.6"},
+        run_steps=[
+            {
+                "id": "step-b",
+                "agent": "agent-b",
+                "input_ref": "inputs/a.txt",
+                "output_ref": "outputs/z.txt",
+                "status": "ok",
+            },
+            {
+                "id": "step-a",
+                "agent": "agent-a",
+                "input_ref": "inputs/a.txt",
+                "output_ref": "outputs/z.txt",
+                "status": "ok",
+            },
+        ],
+    )
+    receipt_b = make_receipt(
+        snapshot,
+        policy_pack={"version": "1.2.3", "id": "policy-pack"},
+        reasoning_pack={"version": "4.5.6", "id": "reason-pack"},
+        run_steps=[
+            {
+                "id": "step-a",
+                "agent": "agent-a",
+                "input_ref": "inputs/a.txt",
+                "output_ref": "outputs/z.txt",
+                "status": "ok",
+            },
+            {
+                "id": "step-b",
+                "agent": "agent-b",
+                "input_ref": "inputs/a.txt",
+                "output_ref": "outputs/z.txt",
+                "status": "ok",
+            },
+        ],
+    )
+
+    assert canonical_json_bytes(receipt_a) == canonical_json_bytes(receipt_b)

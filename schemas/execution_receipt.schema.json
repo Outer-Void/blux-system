@@ -33,8 +33,39 @@
         },
         "contract_version": {
           "type": "string"
+        },
+        "requested_model_version": {
+          "type": "string"
+        },
+        "resolved_model_version": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
         }
       }
+    },
+    "policy_pack": {
+      "$ref": "#/definitions/pack"
+    },
+    "reasoning_pack": {
+      "$ref": "#/definitions/pack"
+    },
+    "run_graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/run_step"
+          }
+        }
+      }
+    },
+    "dataset_fixture": {
+      "$ref": "#/definitions/dataset_fixture"
     },
     "snapshot": {
       "type": "object",
@@ -74,6 +105,9 @@
         },
         "output_hashes": {
           "type": "string"
+        },
+        "run_graph_steps": {
+          "type": "string"
         }
       }
     },
@@ -96,6 +130,57 @@
         "size": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "run_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "agent", "input_ref", "output_ref", "status"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "input_ref": {
+          "type": "string"
+        },
+        "output_ref": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "dataset_fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "hash": {
+          "type": ["string", "null"]
+        },
+        "path": {
+          "type": "string"
         }
       }
     }

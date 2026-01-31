@@ -8,12 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Sequence
 
-CONTRACT_VERSION = "0.1"
+CONTRACT_VERSION = "1.0"
 DEFAULT_ORDERING = {
     "outputs": "path",
     "output_bundles": "bundle_id",
     "patch_bundles": "bundle_id",
     "output_hashes": "path",
+    "run_graph_steps": "id",
 }
 
 
@@ -151,6 +152,9 @@ def _default_agent_headers() -> dict[str, str]:
         "input_hash": os.getenv("BLUX_AGENT_INPUT_HASH", "unknown"),
         "model_version": os.getenv("BLUX_AGENT_MODEL_VERSION", "unknown"),
         "contract_version": os.getenv("BLUX_AGENT_CONTRACT_VERSION", "unknown"),
+        "requested_model_version": os.getenv("BLUX_AGENT_REQUESTED_MODEL_VERSION", "unknown"),
+        "resolved_model_version": os.getenv("BLUX_AGENT_RESOLVED_MODEL_VERSION", "unknown"),
+        "schema_version": os.getenv("BLUX_AGENT_SCHEMA_VERSION", "unknown"),
     }
 
 
@@ -165,12 +169,48 @@ def _collect_output_hashes(snapshot: dict[str, object]) -> list[dict[str, object
     return sorted(output_records, key=lambda item: (item["path"], item["hash"]))
 
 
+def _normalize_run_steps(steps: Sequence[dict[str, object]]) -> list[dict[str, object]]:
+    normalized = []
+    for step in steps:
+        normalized.append(
+            {
+                "id": step["id"],
+                "agent": step["agent"],
+                "input_ref": step["input_ref"],
+                "output_ref": step["output_ref"],
+                "status": step["status"],
+            }
+        )
+    return sorted(normalized, key=lambda item: item["id"])
+
+
+def _normalize_pack(pack: dict[str, str] | None) -> dict[str, str] | None:
+    if not pack:
+        return None
+    return {"id": pack["id"], "version": pack["version"]}
+
+
+def _normalize_dataset_fixture(fixture: dict[str, object] | None) -> dict[str, object] | None:
+    if not fixture:
+        return None
+    normalized = {"id": fixture["id"]}
+    if "hash" in fixture:
+        normalized["hash"] = fixture["hash"]
+    if "path" in fixture:
+        normalized["path"] = fixture["path"]
+    return normalized
+
+
 def make_receipt(
     snapshot: dict[str, object],
     *,
     agent_headers: dict[str, str] | None = None,
     created_at: str | None = None,
     contract_version: str = CONTRACT_VERSION,
+    policy_pack: dict[str, str] | None = None,
+    reasoning_pack: dict[str, str] | None = None,
+    run_steps: Sequence[dict[str, object]] | None = None,
+    dataset_fixture: dict[str, object] | None = None,
 ) -> dict[str, object]:
     created = created_at or _deterministic_timestamp()
     snapshot_hash = snapshot.get("snapshot_hash")
@@ -188,6 +228,9 @@ def make_receipt(
             "input_hash": agent["input_hash"],
             "model_version": agent["model_version"],
             "contract_version": agent["contract_version"],
+            "requested_model_version": agent.get("requested_model_version", "unknown"),
+            "resolved_model_version": agent.get("resolved_model_version", "unknown"),
+            "schema_version": agent.get("schema_version", "unknown"),
         },
         "snapshot": {
             "hash": snapshot_hash,
@@ -197,6 +240,17 @@ def make_receipt(
         "output_hashes": output_hashes,
         "ordering": DEFAULT_ORDERING,
     }
+    normalized_policy_pack = _normalize_pack(policy_pack)
+    if normalized_policy_pack:
+        payload["policy_pack"] = normalized_policy_pack
+    normalized_reasoning_pack = _normalize_pack(reasoning_pack)
+    if normalized_reasoning_pack:
+        payload["reasoning_pack"] = normalized_reasoning_pack
+    if run_steps is not None:
+        payload["run_graph"] = {"steps": _normalize_run_steps(run_steps)}
+    normalized_fixture = _normalize_dataset_fixture(dataset_fixture)
+    if normalized_fixture:
+        payload["dataset_fixture"] = normalized_fixture
     receipt_hash = _hash_bytes(canonical_json_bytes(payload))
     payload["receipt_hash"] = receipt_hash
     return payload
@@ -278,11 +332,46 @@ def build_replay_report(receipt_path: Path, root_dir: Path) -> dict[str, object]
             }
         )
 
+    dataset_fixture = receipt.get("dataset_fixture") if isinstance(receipt, dict) else None
+    fixture_result = None
+    fixture_missing = 0
+    fixture_mismatch = 0
+    if isinstance(dataset_fixture, dict):
+        fixture_path_value = dataset_fixture.get("path")
+        fixture_path = root_dir / fixture_path_value if fixture_path_value else None
+        exists = fixture_path.exists() if fixture_path else None
+        actual_hash = _hash_file(fixture_path) if fixture_path and exists else None
+        expected_hash = dataset_fixture.get("hash")
+        hash_match = None
+        if expected_hash is not None:
+            hash_match = exists and actual_hash == expected_hash if exists is not None else None
+            if exists is False:
+                fixture_missing = 1
+            if exists and hash_match is False:
+                fixture_mismatch = 1
+        fixture_result = {
+            "id": dataset_fixture.get("id"),
+            "path": fixture_path_value,
+            "expected_hash": expected_hash,
+            "exists": exists,
+            "actual_hash": actual_hash,
+            "hash_match": hash_match,
+        }
+
     summary = {
-        "ok": schema_valid and receipt_hash_match and missing_count == 0 and mismatch_count == 0,
+        "ok": (
+            schema_valid
+            and receipt_hash_match
+            and missing_count == 0
+            and mismatch_count == 0
+            and fixture_missing == 0
+            and fixture_mismatch == 0
+        ),
         "total_outputs": len(output_results),
         "missing_outputs": missing_count,
         "hash_mismatches": mismatch_count,
+        "fixture_missing": fixture_missing,
+        "fixture_hash_mismatches": fixture_mismatch,
     }
 
     payload = {
@@ -294,6 +383,7 @@ def build_replay_report(receipt_path: Path, root_dir: Path) -> dict[str, object]
         "schema_error": schema_error,
         "receipt_hash_match": receipt_hash_match,
         "output_results": output_results,
+        "dataset_fixture_result": fixture_result,
         "summary": summary,
     }
     report_hash = _hash_bytes(canonical_json_bytes(payload))

@@ -59,3 +59,36 @@ def test_replay_detects_hash_mismatch(tmp_path: Path, monkeypatch) -> None:
 
     assert report["summary"]["ok"] is False
     assert report["summary"]["hash_mismatches"] == 1
+
+
+def test_replay_dataset_fixture_verification(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("BLUX_DETERMINISTIC_TIMESTAMP", "2024-01-01T00:00:00Z")
+
+    input_dir = tmp_path / "inputs"
+    output_dir = tmp_path / "outputs"
+    fixtures_dir = tmp_path / "fixtures"
+    input_dir.mkdir()
+    output_dir.mkdir()
+    fixtures_dir.mkdir()
+
+    (input_dir / "alpha.txt").write_text("alpha", encoding="utf-8")
+    (output_dir / "result.json").write_text("{\"ok\":true}", encoding="utf-8")
+    fixture_path = fixtures_dir / "fixture-1.json"
+    fixture_path.write_text("{\"fixture\":1}", encoding="utf-8")
+
+    snapshot = build_snapshot_from_dirs(input_dir, output_dir)
+    receipt = make_receipt(
+        snapshot,
+        dataset_fixture={
+            "id": "fixture-1",
+            "hash": "sha256:invalid",
+            "path": "fixtures/fixture-1.json",
+        },
+    )
+    receipt_path = tmp_path / "receipt.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    report = build_replay_report(receipt_path, tmp_path)
+
+    assert report["summary"]["ok"] is False
+    assert report["summary"]["fixture_hash_mismatches"] == 1

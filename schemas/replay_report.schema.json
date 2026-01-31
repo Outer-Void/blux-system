@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BLUX Replay Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "created_at",
+    "receipt_path",
+    "root",
+    "schema_valid",
+    "schema_error",
+    "receipt_hash_match",
+    "output_results",
+    "summary",
+    "report_hash"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "receipt_path": {
+      "type": "string"
+    },
+    "root": {
+      "type": "string"
+    },
+    "schema_valid": {
+      "type": "boolean"
+    },
+    "schema_error": {
+      "type": ["string", "null"]
+    },
+    "receipt_hash_match": {
+      "type": "boolean"
+    },
+    "output_results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/output_result"
+      }
+    },
+    "dataset_fixture_result": {
+      "$ref": "#/definitions/dataset_fixture_result"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok",
+        "total_outputs",
+        "missing_outputs",
+        "hash_mismatches",
+        "fixture_missing",
+        "fixture_hash_mismatches"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "total_outputs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing_outputs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hash_mismatches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fixture_missing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fixture_hash_mismatches": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "report_hash": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "output_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "expected_hash", "actual_hash", "exists", "hash_match"],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "expected_hash": {
+          "type": "string"
+        },
+        "actual_hash": {
+          "type": ["string", "null"]
+        },
+        "exists": {
+          "type": "boolean"
+        },
+        "hash_match": {
+          "type": "boolean"
+        }
+      }
+    },
+    "dataset_fixture_result": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "path", "expected_hash", "exists", "actual_hash", "hash_match"],
+      "properties": {
+        "id": {
+          "type": ["string", "null"]
+        },
+        "path": {
+          "type": ["string", "null"]
+        },
+        "expected_hash": {
+          "type": ["string", "null"]
+        },
+        "exists": {
+          "type": ["boolean", "null"]
+        },
+        "actual_hash": {
+          "type": ["string", "null"]
+        },
+        "hash_match": {
+          "type": ["boolean", "null"]
+        }
+      }
+    }
+  }
+}

@@ -8,7 +8,8 @@ no intelligence, orchestration, or decision-making.
 
 - JSON schemas for system state, snapshots, and receipts.
 - Deterministic snapshot + receipt builders.
-- Minimal CLI for recording snapshots/receipts.
+- Replay verification reports.
+- Minimal CLI for recording snapshots/receipts and replay reports.
 
 ## What is *not* included
 
@@ -40,4 +41,8 @@ blux-system receipt --snapshot ./recordings/snapshot.json --out ./recordings
 
 - [Contracts](docs/CONTRACT.md)
 - [Determinism](docs/DETERMINISM.md)
+- [Replay](docs/REPLAY.md)
+- [Runbook](docs/RUNBOOK.md)
+- [Compatibility](docs/COMPATIBILITY.md)
+- [Orchestrator Concepts](docs/ORCHESTRATOR_CONCEPTS.md)
 - [Platforms](docs/PLATFORMS.md)
