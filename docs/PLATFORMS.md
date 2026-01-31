@@ -1,7 +1,7 @@
 # Platforms
 
-This repository is in Phase 1 (system state contracts + deterministic snapshots
-and receipts). Use the setup below to prepare a basic Python environment.
+This repository targets System State v1.0. Use the setup below to prepare a
+basic Python environment.
 
 ## Termux (Android, native)
 
@@ -32,3 +32,5 @@ brew install python3
 ```powershell
 winget install --id Python.Python.3
 ```
+
+After installation, `python` and `pip` are available in PowerShell.

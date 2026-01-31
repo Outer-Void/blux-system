@@ -1,0 +1,28 @@
+{
+  "contract_version": "0.1",
+  "created_at": "2024-01-01T00:00:00Z",
+  "agent": {
+    "input_hash": "sha256:agent",
+    "model_version": "gpt-test",
+    "contract_version": "0.1"
+  },
+  "snapshot": {
+    "hash": "sha256:snapshot",
+    "contract_version": "0.1"
+  },
+  "snapshot_hash": "sha256:snapshot",
+  "output_hashes": [
+    {
+      "path": "outputs/result.json",
+      "hash": "sha256:out",
+      "size": 12
+    }
+  ],
+  "ordering": {
+    "outputs": "path",
+    "output_bundles": "bundle_id",
+    "patch_bundles": "bundle_id",
+    "output_hashes": "path"
+  },
+  "receipt_hash": "sha256:de1d6353526afec68a48ad5536ef589f72e25456daae789a4acf406f052ffb98"
+}
