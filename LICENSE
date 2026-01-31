@@ -1,21 +1,80 @@
 BLUX Proprietary License
+=======================
 
-Copyright (c) 2026 BLUX
-
+Copyright (c) 2026 Outer-Void / Justadudeinspace (JADIS).
 All rights reserved.
 
-This software and associated documentation files (the "Software") are the
-proprietary and confidential information of BLUX. Unauthorized copying,
-modification, distribution, public display, public performance, or use of the
-Software, via any medium, is strictly prohibited without the prior written
-permission of BLUX.
+Organization: Outer-Void
+Owner: Justadudeinspace (JADIS)
+Contact: outervoid.blux@gmail.com
 
-No license, express or implied, is granted to any party other than BLUX, except
-as expressly stated in a written agreement signed by BLUX.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL BLUX
-BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
-CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Grant of License
+----------------
+This software and associated documentation files (the "Software") are proprietary and
+confidential to the copyright holder.
+
+No rights are granted to any person or entity to use, copy, modify, merge, publish,
+distribute, sublicense, create derivative works of, or sell copies of the Software,
+except as expressly permitted in a written agreement signed by the copyright holder.
+
+
+Restrictions
+------------
+The following actions are expressly prohibited unless prior written permission is
+obtained from the copyright holder:
+
+- Redistribution, sublicensing, sale, or transfer of the Software or any derivative works.
+- Public or private hosting of the Software or derivative works.
+- Reverse engineering, decompilation, or disassembly of the Software, except to the extent
+  such restriction is prohibited by applicable law.
+- Removal, alteration, or obfuscation of copyright, trademark, or proprietary notices.
+- Use of the Software to train, fine-tune, or evaluate machine learning or artificial
+  intelligence models without explicit written permission.
+
+
+Ownership
+---------
+The Software is licensed, not sold.
+
+All right, title, and interest in and to the Software, including but not limited to all
+copyrights, trade secrets, and proprietary rights, remain exclusively with the
+copyright holder.
+
+
+Termination
+-----------
+Any violation of this License immediately and automatically terminates all rights
+granted to the Licensee.
+
+Upon termination, the Licensee must immediately cease all use of the Software and destroy
+all copies of the Software in their possession or control.
+
+
+Warranty Disclaimer
+-------------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, AND NON-INFRINGEMENT.
+
+THE ENTIRE RISK ARISING OUT OF THE USE OR PERFORMANCE OF THE SOFTWARE REMAINS WITH THE USER.
+
+
+Limitation of Liability
+----------------------
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+Governing Law
+-------------
+This License shall be governed by and construed in accordance with applicable law,
+without regard to conflict of law principles.
+
+
+Contact
+-------
+For licensing inquiries or permission requests, contact:
+
+outervoid.blux@gmail.com
