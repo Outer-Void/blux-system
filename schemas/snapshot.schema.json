@@ -45,6 +45,16 @@
     },
     "snapshot_hash": {
       "type": "string"
+    },
+    "profile_id": {
+      "type": "string"
+    },
+    "profile_version": {
+      "type": "string"
+    },
+    "device": {
+      "type": "string",
+      "enum": ["cpu", "gpu"]
     }
   },
   "definitions": {

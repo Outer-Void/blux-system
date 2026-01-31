@@ -30,6 +30,12 @@ Required fields:
 - `patch_bundles[]` (`bundle_id`, `base_path`, `patches[]`, `outputs[]`)
 - `snapshot_hash` (sha256 of canonical snapshot payload)
 
+Optional fields:
+
+- `profile_id`
+- `profile_version`
+- `device` (`cpu` or `gpu`)
+
 Schema: `schemas/snapshot.schema.json`.
 
 ## Execution receipt
@@ -50,6 +56,7 @@ Required fields:
 - Optional `policy_pack`, `reasoning_pack` identifiers
 - Optional `run_graph.steps[]` (`id`, `agent`, `input_ref`, `output_ref`, `status`)
 - Optional `dataset_fixture` (`id`, optional `hash`, optional `path`)
+- Optional `profile_id`, `profile_version`, `device` (`cpu` or `gpu`)
 - `receipt_hash` (sha256 of canonical receipt payload)
 
 Schema: `schemas/execution_receipt.schema.json`.

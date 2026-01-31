@@ -25,6 +25,19 @@ def test_snapshot_schema_validation() -> None:
     jsonschema.validate(snapshot, schema)
 
 
+def test_snapshot_schema_validation_with_profile() -> None:
+    snapshot = make_snapshot(
+        inputs=[{"path": "inputs/data.txt", "hash": "sha256:abc", "size": 12}],
+        outputs=[{"path": "outputs/result.json", "hash": "sha256:def", "size": 34}],
+        created_at="2024-01-01T00:00:00Z",
+        profile_id="profile-basic",
+        profile_version="2024.04",
+        device="cpu",
+    )
+    schema = load_schema("snapshot.schema.json")
+    jsonschema.validate(snapshot, schema)
+
+
 def test_receipt_schema_validation() -> None:
     snapshot = make_snapshot(
         inputs=[{"path": "inputs/data.txt", "hash": "sha256:abc", "size": 12}],
@@ -32,6 +45,31 @@ def test_receipt_schema_validation() -> None:
         created_at="2024-01-01T00:00:00Z",
     )
     receipt = make_receipt(snapshot, created_at="2024-01-01T00:00:00Z")
+    schema = load_schema("execution_receipt.schema.json")
+    jsonschema.validate(receipt, schema)
+
+
+def test_receipt_schema_validation_with_profile() -> None:
+    snapshot = make_snapshot(
+        inputs=[{"path": "inputs/data.txt", "hash": "sha256:abc", "size": 12}],
+        outputs=[{"path": "outputs/result.json", "hash": "sha256:def", "size": 34}],
+        created_at="2024-01-01T00:00:00Z",
+    )
+    receipt = make_receipt(
+        snapshot,
+        created_at="2024-01-01T00:00:00Z",
+        agent_headers={
+            "input_hash": "sha256:input",
+            "model_version": "model-x",
+            "contract_version": "1.0",
+            "requested_model_version": "model-x",
+            "resolved_model_version": "model-x",
+            "schema_version": "1.0",
+            "profile_id": "profile-pro",
+            "profile_version": "2024.04",
+            "device": "gpu",
+        },
+    )
     schema = load_schema("execution_receipt.schema.json")
     jsonschema.validate(receipt, schema)
 
