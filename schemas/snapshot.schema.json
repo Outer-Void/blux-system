@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BLUX Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "created_at",
+    "inputs",
+    "outputs",
+    "snapshot_hash"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/file_record"
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/file_record"
+      }
+    },
+    "snapshot_hash": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "file_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hash", "size"],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

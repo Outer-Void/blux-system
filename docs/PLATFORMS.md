@@ -1,7 +1,7 @@
 # Platforms
 
-This repository is in Phase 0 (hygiene only). Use the setup below to prepare a
-basic Python environment for future development.
+This repository is in Phase 1 (system state contracts + deterministic snapshots
+and receipts). Use the setup below to prepare a basic Python environment.
 
 ## Termux (Android, native)
 

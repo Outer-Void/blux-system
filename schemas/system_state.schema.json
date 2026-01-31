@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BLUX System State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "session_id",
+    "project_id",
+    "timestamps",
+    "inputs",
+    "outputs",
+    "agent"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at", "updated_at"],
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/io_ref"
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/io_ref"
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_hash", "model_version", "contract_version"],
+      "properties": {
+        "input_hash": {
+          "type": "string"
+        },
+        "model_version": {
+          "type": "string"
+        },
+        "contract_version": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "io_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hash"],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

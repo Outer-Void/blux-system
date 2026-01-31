@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BLUX Execution Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "created_at",
+    "snapshot",
+    "snapshot_hash",
+    "receipt_hash"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash", "contract_version"],
+      "properties": {
+        "hash": {
+          "type": "string"
+        },
+        "contract_version": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "snapshot_hash": {
+      "type": "string"
+    },
+    "receipt_hash": {
+      "type": "string"
+    }
+  }
+}
