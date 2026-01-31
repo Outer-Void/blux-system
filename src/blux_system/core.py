@@ -127,6 +127,9 @@ def make_snapshot(
     *,
     output_bundles: Sequence[dict[str, object]] | None = None,
     patch_bundles: Sequence[dict[str, object]] | None = None,
+    profile_id: str | None = None,
+    profile_version: str | None = None,
+    device: str | None = None,
     created_at: str | None = None,
     contract_version: str = CONTRACT_VERSION,
 ) -> dict[str, object]:
@@ -142,13 +145,19 @@ def make_snapshot(
         "output_bundles": normalized_output_bundles,
         "patch_bundles": normalized_patch_bundles,
     }
+    if profile_id is not None:
+        payload["profile_id"] = profile_id
+    if profile_version is not None:
+        payload["profile_version"] = profile_version
+    if device is not None:
+        payload["device"] = device
     snapshot_hash = _hash_bytes(canonical_json_bytes(payload))
     payload["snapshot_hash"] = snapshot_hash
     return payload
 
 
 def _default_agent_headers() -> dict[str, str]:
-    return {
+    headers = {
         "input_hash": os.getenv("BLUX_AGENT_INPUT_HASH", "unknown"),
         "model_version": os.getenv("BLUX_AGENT_MODEL_VERSION", "unknown"),
         "contract_version": os.getenv("BLUX_AGENT_CONTRACT_VERSION", "unknown"),
@@ -156,6 +165,16 @@ def _default_agent_headers() -> dict[str, str]:
         "resolved_model_version": os.getenv("BLUX_AGENT_RESOLVED_MODEL_VERSION", "unknown"),
         "schema_version": os.getenv("BLUX_AGENT_SCHEMA_VERSION", "unknown"),
     }
+    profile_id = os.getenv("BLUX_PROFILE_ID")
+    if profile_id is not None:
+        headers["profile_id"] = profile_id
+    profile_version = os.getenv("BLUX_PROFILE_VERSION")
+    if profile_version is not None:
+        headers["profile_version"] = profile_version
+    device = os.getenv("BLUX_PROFILE_DEVICE")
+    if device is not None:
+        headers["device"] = device
+    return headers
 
 
 def _collect_output_hashes(snapshot: dict[str, object]) -> list[dict[str, object]]:
@@ -240,6 +259,15 @@ def make_receipt(
         "output_hashes": output_hashes,
         "ordering": DEFAULT_ORDERING,
     }
+    profile_id = agent.get("profile_id")
+    if profile_id is not None:
+        payload["profile_id"] = profile_id
+    profile_version = agent.get("profile_version")
+    if profile_version is not None:
+        payload["profile_version"] = profile_version
+    device = agent.get("device")
+    if device is not None:
+        payload["device"] = device
     normalized_policy_pack = _normalize_pack(policy_pack)
     if normalized_policy_pack:
         payload["policy_pack"] = normalized_policy_pack
