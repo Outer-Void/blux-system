@@ -6,8 +6,11 @@
   "required": [
     "contract_version",
     "created_at",
+    "agent",
     "snapshot",
     "snapshot_hash",
+    "output_hashes",
+    "ordering",
     "receipt_hash"
   ],
   "properties": {
@@ -16,6 +19,22 @@
     },
     "created_at": {
       "type": "string"
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_hash", "model_version", "contract_version"],
+      "properties": {
+        "input_hash": {
+          "type": "string"
+        },
+        "model_version": {
+          "type": "string"
+        },
+        "contract_version": {
+          "type": "string"
+        }
+      }
     },
     "snapshot": {
       "type": "object",
@@ -33,8 +52,52 @@
     "snapshot_hash": {
       "type": "string"
     },
+    "output_hashes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/file_record"
+      }
+    },
+    "ordering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outputs", "output_bundles", "patch_bundles", "output_hashes"],
+      "properties": {
+        "outputs": {
+          "type": "string"
+        },
+        "output_bundles": {
+          "type": "string"
+        },
+        "patch_bundles": {
+          "type": "string"
+        },
+        "output_hashes": {
+          "type": "string"
+        }
+      }
+    },
     "receipt_hash": {
       "type": "string"
+    }
+  },
+  "definitions": {
+    "file_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hash", "size"],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
     }
   }
 }

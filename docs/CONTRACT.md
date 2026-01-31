@@ -26,6 +26,8 @@ Required fields:
 - `contract_version`
 - `created_at`
 - `inputs[]`, `outputs[]` (`path`, `hash`, `size`)
+- `output_bundles[]` (`bundle_id`, `files[]`)
+- `patch_bundles[]` (`bundle_id`, `base_path`, `patches[]`, `outputs[]`)
 - `snapshot_hash` (sha256 of canonical snapshot payload)
 
 Schema: `schemas/snapshot.schema.json`.
@@ -38,8 +40,11 @@ Required fields:
 
 - `contract_version`
 - `created_at`
+- `agent.input_hash`, `agent.model_version`, `agent.contract_version`
 - `snapshot.hash`, `snapshot.contract_version`
 - `snapshot_hash`
+- `output_hashes[]` (`path`, `hash`, `size`)
+- `ordering.outputs`, `ordering.output_bundles`, `ordering.patch_bundles`, `ordering.output_hashes`
 - `receipt_hash` (sha256 of canonical receipt payload)
 
 Schema: `schemas/execution_receipt.schema.json`.

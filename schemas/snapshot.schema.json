@@ -8,6 +8,8 @@
     "created_at",
     "inputs",
     "outputs",
+    "output_bundles",
+    "patch_bundles",
     "snapshot_hash"
   ],
   "properties": {
@@ -29,6 +31,18 @@
         "$ref": "#/definitions/file_record"
       }
     },
+    "output_bundles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/output_bundle"
+      }
+    },
+    "patch_bundles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/patch_bundle"
+      }
+    },
     "snapshot_hash": {
       "type": "string"
     }
@@ -48,6 +62,47 @@
         "size": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "output_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_id", "files"],
+      "properties": {
+        "bundle_id": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/file_record"
+          }
+        }
+      }
+    },
+    "patch_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_id", "base_path", "patches", "outputs"],
+      "properties": {
+        "bundle_id": {
+          "type": "string"
+        },
+        "base_path": {
+          "type": "string"
+        },
+        "patches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/file_record"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/file_record"
+          }
         }
       }
     }
