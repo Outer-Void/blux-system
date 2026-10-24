@@ -23,7 +23,7 @@ def test_replay_report_determinism(tmp_path: Path, monkeypatch) -> None:
     output_dir.mkdir()
 
     (input_dir / "alpha.txt").write_text("alpha", encoding="utf-8")
-    (output_dir / "result.json").write_text("{\"ok\":true}", encoding="utf-8")
+    (output_dir / "result.json").write_text('{"ok":true}', encoding="utf-8")
 
     snapshot = build_snapshot_from_dirs(input_dir, output_dir)
     receipt = make_receipt(snapshot)
@@ -46,14 +46,14 @@ def test_replay_detects_hash_mismatch(tmp_path: Path, monkeypatch) -> None:
 
     (input_dir / "alpha.txt").write_text("alpha", encoding="utf-8")
     output_file = output_dir / "result.json"
-    output_file.write_text("{\"ok\":true}", encoding="utf-8")
+    output_file.write_text('{"ok":true}', encoding="utf-8")
 
     snapshot = build_snapshot_from_dirs(input_dir, output_dir)
     receipt = make_receipt(snapshot)
     receipt_path = tmp_path / "receipt.json"
     receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
 
-    output_file.write_text("{\"ok\":false}", encoding="utf-8")
+    output_file.write_text('{"ok":false}', encoding="utf-8")
 
     report = build_replay_report(receipt_path, output_dir)
 
@@ -72,9 +72,9 @@ def test_replay_dataset_fixture_verification(tmp_path: Path, monkeypatch) -> Non
     fixtures_dir.mkdir()
 
     (input_dir / "alpha.txt").write_text("alpha", encoding="utf-8")
-    (output_dir / "result.json").write_text("{\"ok\":true}", encoding="utf-8")
+    (output_dir / "result.json").write_text('{"ok":true}', encoding="utf-8")
     fixture_path = fixtures_dir / "fixture-1.json"
-    fixture_path.write_text("{\"fixture\":1}", encoding="utf-8")
+    fixture_path.write_text('{"fixture":1}', encoding="utf-8")
 
     snapshot = build_snapshot_from_dirs(input_dir, output_dir)
     receipt = make_receipt(

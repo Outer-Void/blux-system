@@ -7,8 +7,8 @@ import jsonschema
 
 from blux_system.core import build_replay_report, make_receipt, make_snapshot
 
-ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_DIR = ROOT / "schemas"
+ROOT = Path(__file__).resolve().parents[2]
+SCHEMA_DIR = ROOT / "src" / "blux_system" / "legacy" / "schemas"
 
 
 def load_schema(name: str) -> dict:
@@ -81,7 +81,7 @@ def test_replay_report_schema_validation(tmp_path: Path) -> None:
     output_dir.mkdir()
 
     (input_dir / "alpha.txt").write_text("alpha", encoding="utf-8")
-    (output_dir / "result.json").write_text("{\"ok\":true}", encoding="utf-8")
+    (output_dir / "result.json").write_text('{"ok":true}', encoding="utf-8")
 
     snapshot = make_snapshot(
         inputs=[{"path": "inputs/alpha.txt", "hash": "sha256:aaa", "size": 5}],

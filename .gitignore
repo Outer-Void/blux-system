@@ -28,3 +28,4 @@ venv/
 # Build artifacts
 /build/
 /dist/
+.ruff_cache/

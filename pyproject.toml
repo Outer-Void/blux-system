@@ -1,26 +1,56 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "blux-system"
-version = "1.0.0"
-description = "Deterministic BLUX system state, snapshot, and receipt tooling."
+version = "2.0.0"
+description = "BLUX System: non-intelligent execution truth store for BLUX Contract v1 receipts."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
+license = "LicenseRef-BLUX-Proprietary"
+license-files = ["LICENSE"]
 dependencies = [
-  "jsonschema>=4.21.0",
+  # BLUX Contract v1 through the canonical SDK; schemas are never copied into this repository.
+  # Pinned to an immutable Outer-Void/blux commit (tag blux-sdk-v0.1.0). Bump deliberately.
+  "blux-sdk @ git+https://github.com/Outer-Void/blux.git@0b09a46a98a29cbdb108679f3ef5252b0b6881d1#subdirectory=sdk/python",
 ]
 
 [project.scripts]
 blux-system = "blux_system.cli:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"blux_system.legacy" = ["schemas/*.json"]
+
 [tool.pytest.ini_options]
-addopts = "-ra"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "SIM", "C4"]
+ignore = ["S101", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "BLE"]
+"src/blux_system/legacy/**" = ["UP", "SIM", "RUF", "B", "E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["blux_system"]
+known-third-party = ["blux_sdk"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+mypy_path = "src"
+packages = ["blux_system"]
+
+[[tool.mypy.overrides]]
+module = ["blux_system.legacy.*", "blux_system.core"]
+ignore_errors = true

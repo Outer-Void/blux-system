@@ -7,8 +7,8 @@ import jsonschema
 
 from blux_system.core import build_replay_report
 
-ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_DIR = ROOT / "schemas"
+ROOT = Path(__file__).resolve().parents[2]
+SCHEMA_DIR = ROOT / "src" / "blux_system" / "legacy" / "schemas"
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
@@ -24,6 +24,6 @@ def test_legacy_receipt_schema_compatibility(tmp_path: Path) -> None:
 
     outputs_dir = tmp_path / "outputs"
     outputs_dir.mkdir()
-    (outputs_dir / "result.json").write_text("{\"legacy\":true}", encoding="utf-8")
+    (outputs_dir / "result.json").write_text('{"legacy":true}', encoding="utf-8")
     report = build_replay_report(receipt_path, tmp_path)
     assert report["schema_valid"] is True
