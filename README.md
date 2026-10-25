@@ -63,3 +63,9 @@ The pre-Contract-v1 snapshot/receipt/replay tooling (`blux-system snapshot|recei
 [docs/DEPRECATION.md](docs/DEPRECATION.md).
 
 Licence: BLUX Proprietary (see `LICENSE`). Third-party credits: [Outer-Void/credits](https://github.com/Outer-Void/credits).
+
+## License
+
+**BLUX Proprietary License** (proprietary). Copyright (c) 2026 Outer-Void / Justadudeinspace (JADIS). All rights reserved. See [LICENSE](LICENSE).
+
+Contact: outervoid.blux@gmail.com (main) · theoutervoid@outlook.com (fallback)
