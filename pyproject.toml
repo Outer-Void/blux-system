@@ -12,8 +12,8 @@ license = "LicenseRef-BLUX-Proprietary"
 license-files = ["LICENSE"]
 dependencies = [
   # BLUX Contract v1 through the canonical SDK; schemas are never copied into this repository.
-  # Pinned to an immutable Outer-Void/blux commit (tag blux-sdk-v0.1.0). Bump deliberately.
-  "blux-sdk @ git+https://github.com/Outer-Void/blux.git@0b09a46a98a29cbdb108679f3ef5252b0b6881d1#subdirectory=sdk/python",
+  # Pinned to an immutable Outer-Void/blux commit (SDK 0.2.0). Bump deliberately.
+  "blux-sdk @ git+https://github.com/Outer-Void/blux.git@6ee4c805caac6bb1bd036f9a0d277bb19efc237f#subdirectory=sdk/python",
 ]
 
 [project.scripts]
