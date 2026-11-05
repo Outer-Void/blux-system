@@ -1,0 +1,24 @@
+{
+ "contract": "dat.policy",
+ "version": 1,
+ "policy_id": "blux-system-release",
+ "description": "blux-system release gate (OV-49, F76). Suppressions are exact fingerprints of triaged non-secrets (test fakes, CI-local service credentials, refused development defaults, false positives); anything else stays blocking.",
+ "gate": {
+  "fail_on": "high",
+  "min_confidence": "medium"
+ },
+ "suppress": [
+  {
+   "rule_id": "secrets.private-key",
+   "path": "tests/test_redaction.py",
+   "fingerprint": "c41f54673bc409c1ad1d4819a2b42e98f378f1e0eeeb16e7688162d018b2afb8",
+   "reason": "deliberately fake credential-shaped value in a test proving redaction or rejection"
+  },
+  {
+   "rule_id": "secrets.hardcoded-credential",
+   "path": "tests/test_redaction.py",
+   "fingerprint": "1569428f8446fa43ecca3e085a7124136b9a94e1f7f6aca0b61d623b31635337",
+   "reason": "deliberately fake credential-shaped value in a test proving redaction or rejection"
+  }
+ ]
+}
