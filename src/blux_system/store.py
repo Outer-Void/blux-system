@@ -4,13 +4,14 @@ Layout of a store directory:
     store.json        format marker
     retention.json    retention/privacy policy (blux-system.retention v1)
     log.jsonl         append-only records; each line chains to the previous record's hash
+    head.json         {seq, hash} of the last appended record, so a shortened or swapped log is detected (OV-52)
     blobs/sha256/..   optional content-addressed artifact bytes
     .pseudonym.key    per-store HMAC key, created only when actor pseudonymization is enabled
     .lock             writer lock
 
 Records are never edited in place. Receipts are immutable: re-ingesting an identical receipt is a no-op,
 a different document under the same receipt_id or operation_id is RECEIPT_CONFLICT. The only rewrite is an
-explicit retention compaction, which itself is recorded.
+explicit retention compaction, which records itself inside the new chain.
 """
 
 from __future__ import annotations
@@ -20,7 +21,9 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -47,10 +50,97 @@ FORMAT_VERSION = 1
 GENESIS = "0" * 64
 KINDS = ("receipt", "artifact", "event", "retention", "recovery")
 EVENT_TYPES = ("cancelled", "note")
+RECEIPT_STATUSES = ("succeeded", "failed", "rejected")
+# How long a writer waits for another writer's lock before STORE_LOCKED. Appends take milliseconds, so a short
+# wait turns simultaneous writers into a queue instead of refusals (OV-52).
+LOCK_WAIT_S = 10.0
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def _record_hash(body: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json(body).encode("utf-8")).hexdigest()
+
+
+def _fsync_dir(path: Path) -> None:
+    with contextlib.suppress(OSError):  # not supported everywhere; the data itself is already fsynced
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+def _write_atomic(path: Path, data: bytes, *, sync_dir: bool = True) -> None:
+    """Replace `path` with `data`: readers see the old or the new content, never a partial file."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+    with tmp.open("wb") as fh:
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+    if sync_dir:
+        _fsync_dir(path.parent)
+
+
+def _is_str(v: Any, *, optional: bool = False) -> bool:
+    return (v is None and optional) or (isinstance(v, str) and v != "")
+
+
+def _is_time(v: Any) -> bool:
+    if not isinstance(v, str):
+        return False
+    try:
+        parse_timestamp(v)
+    except ValueError:
+        return False
+    return True
+
+
+def payload_problem(kind: str, p: Any) -> str | None:
+    """Why a record's payload cannot be what the index and queries rely on, or None.
+
+    A cheap structural check run on every load. A record that passes the hash chain can still be malformed when
+    the whole chain was recomputed by another program; such a record must be reported, never crash a reader.
+    `ReceiptStore.verify()` additionally validates receipts and artifacts against Contract v1.
+    """
+    if not isinstance(p, dict):
+        return "payload is not an object"
+    if kind == "receipt":
+        if p.get("contract") != "blux.receipt":
+            return "not a blux.receipt"
+        if not all(_is_str(p.get(k)) for k in ("receipt_id", "operation_id")):
+            return "receipt_id or operation_id missing"
+        # capability_id is null on a receipt for a request rejected before its capability was known.
+        nullable = ("parent_operation_id", "session_id", "project_id", "capability_id", "capability_version", "error_code")
+        if not all(_is_str(p.get(k), optional=True) for k in nullable):
+            return "an optional identifier is not a string"
+        if p.get("status") not in RECEIPT_STATUSES:
+            return "unknown receipt status"
+        if not (_is_time(p.get("started_at")) and _is_time(p.get("finished_at"))):
+            return "started_at or finished_at is not a timestamp"
+        ids_ = p.get("artifact_ids")
+        if not (isinstance(ids_, list) and all(_is_str(a) for a in ids_)):
+            return "artifact_ids is not a list of ids"
+    elif kind == "artifact":
+        if p.get("contract") != "blux.artifact":
+            return "not a blux.artifact"
+        if not (_is_str(p.get("artifact_id")) and _is_str(p.get("operation_id"))):
+            return "artifact_id or operation_id missing"
+        if not (isinstance(p.get("sha256"), str) and _SHA256.fullmatch(p["sha256"])):
+            return "sha256 is not a hex digest"
+        size = p.get("size_bytes")
+        if not (isinstance(size, int) and not isinstance(size, bool) and size >= 0):
+            return "size_bytes is not a non-negative integer"
+    elif kind == "event":
+        if not (_is_str(p.get("event_id")) and isinstance(p.get("operation_id"), str)):
+            return "event_id or operation_id missing"
+        if not ids.is_valid(ids.IdKind.OPERATION, p["operation_id"]):
+            return "operation_id is not a valid id"
+        if p.get("type") not in EVENT_TYPES:
+            return "unknown event type"
+        if not isinstance(p.get("data"), dict):
+            return "data is not an object"
+    return None
 
 
 def new_event_id() -> str:
@@ -82,13 +172,24 @@ class VerifyReport:
 class ReceiptStore:
     """Open with ReceiptStore.open(path) or create with ReceiptStore.init(path)."""
 
-    def __init__(self, root: Path, *, read_only: bool) -> None:
+    def __init__(self, root: Path, *, read_only: bool, lock_wait_s: float = LOCK_WAIT_S) -> None:
         self.root = root
         self.read_only = read_only
+        self.lock_wait_s = lock_wait_s
         self.log_path = root / "log.jsonl"
-        self.policy = RetentionPolicy.from_document(json.loads((root / "retention.json").read_text(encoding="utf-8")))
+        self.head_path = root / "head.json"
+        try:
+            policy_doc = json.loads((root / "retention.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise StoreError(
+                StoreErrorCode.STORE_CORRUPT, "retention.json is missing or not valid JSON.", details={"reason": type(exc).__name__}
+            ) from None
+        self.policy = RetentionPolicy.from_document(policy_doc)
         self._redactor = self.policy.redactor()
         self.index = Index()
+        self._good_offset = 0
+        self._log_size = 0
+        self._unterminated = False
 
     # ------------------------------------------------------------------ lifecycle
     @classmethod
@@ -103,33 +204,44 @@ class ReceiptStore:
         (root / "log.jsonl").touch()
         return cls.open(root)
 
-    @classmethod
-    def open(cls, path: str | Path, *, read_only: bool = False, repair_torn_tail: bool = True) -> ReceiptStore:
-        root = Path(path)
+    @staticmethod
+    def check_marker(root: Path) -> None:
+        """Raise STORE_NOT_FOUND or STORE_CORRUPT unless `root/store.json` names a format this code reads."""
         marker = root / "store.json"
         if not marker.is_file():
             raise StoreError(StoreErrorCode.STORE_NOT_FOUND, "No BLUX System store here.", details={"path": str(root)})
         try:
             meta = json.loads(marker.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        except (OSError, ValueError):
             raise StoreError(StoreErrorCode.STORE_CORRUPT, "store.json is not valid JSON.") from None
-        if meta.get("format") != FORMAT or meta.get("version") != FORMAT_VERSION:
+        if not isinstance(meta, dict) or meta.get("format") != FORMAT:
+            raise StoreError(StoreErrorCode.STORE_CORRUPT, "Unrecognized store format.", details={"reason": "not_a_store"})
+        if meta.get("version") != FORMAT_VERSION:
+            # Never read or write a format this code does not know; a newer store needs a newer blux-system.
             raise StoreError(
                 StoreErrorCode.STORE_CORRUPT,
-                "Unrecognized store format.",
-                details={"format": meta.get("format"), "version": meta.get("version")},
+                "Unsupported store format version.",
+                details={"reason": "unsupported_version", "version": meta.get("version"), "supported": [FORMAT_VERSION]},
             )
-        store = cls(root, read_only=read_only)
+
+    @classmethod
+    def open(
+        cls, path: str | Path, *, read_only: bool = False, repair_torn_tail: bool = True, lock_wait_s: float = LOCK_WAIT_S
+    ) -> ReceiptStore:
+        root = Path(path)
+        cls.check_marker(root)
+        store = cls(root, read_only=read_only, lock_wait_s=lock_wait_s)
         report = store._load()
-        only_torn = report.torn_tail and all(p["reason"] == "torn_tail" for p in report.problems)
-        if report.ok:
-            return store
-        if only_torn and not read_only and repair_torn_tail:
-            store._repair_torn_tail(report)
-            return store
-        if only_torn and read_only:
-            return store  # intact prefix is readable; a writer will repair the tail
-        raise StoreError(StoreErrorCode.STORE_CORRUPT, "Store log failed verification.", details=report.to_document())
+        if not report.ok and not store._repairable(report):
+            raise StoreError(StoreErrorCode.STORE_CORRUPT, "Store log failed verification.", details=report.to_document())
+        if not read_only and repair_torn_tail and (report.torn_tail or store._unterminated):
+            store._repair_tail()
+        # A read-only open serves the intact prefix; a writer repairs the tail.
+        return store
+
+    @staticmethod
+    def _repairable(report: VerifyReport) -> bool:
+        return report.torn_tail and all(p["reason"] == "torn_tail" for p in report.problems)
 
     # ------------------------------------------------------------------ log reading / verification
     def _iter_lines(self) -> Iterator[tuple[int, bytes, bool]]:
@@ -140,25 +252,49 @@ class ReceiptStore:
                 yield offset, raw, raw.endswith(b"\n")
                 offset += len(raw)
 
-    def verify(self) -> VerifyReport:
-        return _IndexBuilder(self).build()
+    def verify(self, *, expect_head: str | None = None) -> VerifyReport:
+        """Full read-only check: the chain, the head anchor, every payload against Contract v1, and the bytes of
+        every stored artifact blob. `expect_head` is a record hash kept outside the store (for example an export
+        header); the check fails unless the chain still contains it."""
+        builder = _IndexBuilder(self, full=True)
+        report = builder.build()
+        problems = list(report.problems) + self._blob_problems(builder.index)
+        if expect_head is not None and expect_head not in {r["hash"] for r in builder.index.records}:
+            problems.append({"reason": "expected_head_not_found", "expected_head": expect_head})
+        return VerifyReport(ok=not problems, records=report.records, head=report.head, problems=problems, torn_tail=report.torn_tail)
+
+    def _blob_problems(self, index: Index) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for rec in index.artifacts.values():
+            if not rec["meta"].get("blob"):
+                continue
+            doc = rec["payload"]
+            blob = self._blob_path(doc["sha256"])
+            if not blob.is_file():
+                out.append({"seq": rec["seq"], "reason": "blob_missing", "artifact_id": doc["artifact_id"]})
+            elif not self._blob_ok(blob, doc):
+                out.append({"seq": rec["seq"], "reason": "blob_mismatch", "artifact_id": doc["artifact_id"]})
+        return out
 
     def _load(self) -> VerifyReport:
         builder = _IndexBuilder(self)
         report = builder.build()
         self.index = builder.index
         self._good_offset = builder.good_offset
+        self._unterminated = builder.unterminated
         self._log_size = self.log_path.stat().st_size
         return report
 
-    def _repair_torn_tail(self, report: VerifyReport) -> None:
-        """A crash mid-append leaves an unterminated last line. Drop exactly that line and record the recovery."""
-        dropped = self.log_path.stat().st_size - self._good_offset
-        with self._lock(), self.log_path.open("r+b") as fh:
-            fh.truncate(self._good_offset)
-            fh.flush()
-            os.fsync(fh.fileno())
-        self._append("recovery", {"reason": "torn_tail", "dropped_bytes": dropped})
+    def _repair_tail(self) -> None:
+        """Repair what a crash mid-append leaves, and record it.
+
+        - An unparseable last line without a newline (torn write): drop exactly that line.
+        - A complete, verified last record whose newline was not written: add the newline, so the next append
+          does not run into it (before OV-52 that made the whole store STORE_CORRUPT).
+        """
+        with self._lock():
+            self._load_if_changed(repair=False)  # another writer may have repaired it already
+            self._repair_tail_locked()
 
     # ------------------------------------------------------------------ writing
     @contextlib.contextmanager
@@ -167,10 +303,19 @@ class ReceiptStore:
             raise StoreError(StoreErrorCode.STORE_READ_ONLY, "Store was opened read-only.")
         with (self.root / ".lock").open("a+b") as lf:
             if fcntl is not None:
-                try:
-                    fcntl.flock(lf.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    raise StoreError(StoreErrorCode.STORE_LOCKED, "Another writer holds the store lock.") from None
+                deadline = time.monotonic() + max(self.lock_wait_s, 0.0)
+                while True:
+                    try:
+                        fcntl.flock(lf.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            raise StoreError(
+                                StoreErrorCode.STORE_LOCKED,
+                                "Another writer holds the store lock.",
+                                details={"waited_s": self.lock_wait_s},
+                            ) from None
+                        time.sleep(0.01)
             try:
                 yield
             finally:
@@ -192,30 +337,67 @@ class ReceiptStore:
                 skip = check()
                 if skip is not None:
                     return skip
-            body = {
-                "seq": len(self.index.records) + 1,
-                "kind": kind,
-                "at": utc_now(),
-                "payload": payload,
-                "meta": meta or {},
-                "prev": self.index.head,
-            }
-            record = {**body, "hash": _record_hash(body)}
-            line = (canonical_json(record) + "\n").encode("utf-8")
-            with self.log_path.open("ab") as fh:
-                fh.write(line)
-                fh.flush()
-                os.fsync(fh.fileno())
-            self._good_offset += len(line)
-            self._log_size = self.log_path.stat().st_size
-            _IndexBuilder.apply(self.index, record)
-            return record
+            return self._append_locked(kind, payload, meta)
 
-    def _load_if_changed(self) -> None:
+    def _append_locked(self, kind: str, payload: dict[str, Any], meta: dict[str, Any] | None = None) -> dict[str, Any]:
+        body = {
+            "seq": len(self.index.records) + 1,
+            "kind": kind,
+            "at": utc_now(),
+            "payload": payload,
+            "meta": meta or {},
+            "prev": self.index.head,
+        }
+        record = {**body, "hash": _record_hash(body)}
+        line = (canonical_json(record) + "\n").encode("utf-8")
+        with self.log_path.open("ab") as fh:
+            fh.write(line)
+            fh.flush()
+            os.fsync(fh.fileno())
+        self._good_offset += len(line)
+        self._log_size = self.log_path.stat().st_size
+        _IndexBuilder.apply(self.index, record)
+        self._write_head()
+        return record
+
+    def _write_head(self, pending: dict[str, Any] | None = None) -> None:
+        """Anchor the last record (written after the record itself, so a crash leaves the anchor at most one
+        record behind, which a reader accepts). `pending` is the head a compaction is about to install."""
+        doc: dict[str, Any] = {"seq": len(self.index.records), "hash": self.index.head}
+        if pending is not None:
+            doc["pending"] = pending
+        # No directory fsync: if a crash loses the rename, the previous anchor remains, which a reader accepts.
+        _write_atomic(self.head_path, (canonical_json(doc) + "\n").encode("utf-8"), sync_dir=False)
+
+    def _load_if_changed(self, *, repair: bool = True) -> None:
         if self.log_path.stat().st_size != self._log_size:
             report = self._load()
-            if not report.ok:
+            if not report.ok and not self._repairable(report):
                 raise StoreError(StoreErrorCode.STORE_CORRUPT, "Store log changed and failed verification.", details=report.to_document())
+            if repair and (report.torn_tail or self._unterminated):
+                # Another writer crashed mid-append since this process loaded the log; we hold the lock.
+                self._repair_tail_locked()
+
+    def _repair_tail_locked(self) -> None:
+        if self._unterminated:
+            with self.log_path.open("ab") as fh:
+                fh.write(b"\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            self._good_offset += 1
+            self._log_size = self.log_path.stat().st_size
+            self._unterminated = False
+            self._append_locked("recovery", {"reason": "unterminated_record", "seq": len(self.index.records)})
+            return
+        size = self.log_path.stat().st_size
+        if size <= self._good_offset:
+            return
+        with self.log_path.open("r+b") as fh:
+            fh.truncate(self._good_offset)
+            fh.flush()
+            os.fsync(fh.fileno())
+        self._log_size = self._good_offset
+        self._append_locked("recovery", {"reason": "torn_tail", "dropped_bytes": size - self._good_offset})
 
     # ------------------------------------------------------------------ privacy
     def _pseudonym_key(self) -> bytes:
@@ -293,29 +475,42 @@ class ReceiptStore:
         stored_doc = check_envelope(stored_doc, "artifact")
 
         def check() -> dict[str, Any] | None:
+            # Under the writer lock, so retention cannot prune a blob between its write and its record.
             existing = self.index.artifacts.get(doc["artifact_id"])
-            if existing is not None:
-                if existing["payload"] == stored_doc:
-                    return {"status": "duplicate", "artifact_id": doc["artifact_id"]}
+            if existing is not None and existing["payload"] != stored_doc:
                 raise StoreError(
                     StoreErrorCode.RECEIPT_CONFLICT,
                     "artifact_id already stored with different content.",
                     details={"artifact_id": doc["artifact_id"]},
                 )
+            if data is not None:
+                self._store_blob(doc, data)  # also repairs a missing or damaged blob on a duplicate
+            if existing is not None:
+                return {"status": "duplicate", "artifact_id": doc["artifact_id"]}
             return None
 
         if data is not None:
-            blob = self._blob_path(doc["sha256"])
-            blob.parent.mkdir(parents=True, exist_ok=True)
-            if not blob.exists():
-                tmp = blob.with_suffix(".tmp")
-                tmp.write_bytes(data)
-                os.replace(tmp, blob)
             meta["blob"] = True
         record = self._append("artifact", stored_doc, meta, check)
         if record.get("status") == "duplicate":
             return record
         return {"status": "stored", "artifact_id": doc["artifact_id"], "seq": record["seq"]}
+
+    def _store_blob(self, doc: dict[str, Any], data: bytes) -> None:
+        blob = self._blob_path(doc["sha256"])
+        if blob.is_file() and self._blob_ok(blob, doc):
+            return
+        blob.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomic(blob, data)
+
+    @staticmethod
+    def _blob_ok(path: Path, doc: dict[str, Any]) -> bool:
+        hasher, size = hashlib.sha256(), 0
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                hasher.update(chunk)
+                size += len(chunk)
+        return bool(hasher.hexdigest() == doc["sha256"] and size == doc["size_bytes"])
 
     def record_event(
         self,
@@ -513,6 +708,7 @@ class ReceiptStore:
         return header
 
     def import_bundle(self, data: bytes) -> dict[str, Any]:
+        """Import an export bundle: all of it, or (when anything in it is invalid or conflicts) none of it."""
         lines = data.splitlines()
         if not lines:
             raise StoreError(StoreErrorCode.IMPORT_INVALID, "Empty export bundle.")
@@ -534,36 +730,121 @@ class ReceiptStore:
             body = {k: rec.get(k) for k in ("seq", "kind", "at", "payload", "meta", "prev")}
             if rec.get("seq") != i or rec.get("prev") != prev or rec.get("hash") != _record_hash(body):
                 raise StoreError(StoreErrorCode.IMPORT_INVALID, "Bundle hash chain is broken.", details={"seq": i})
+            if rec.get("kind") in ("receipt", "artifact", "event"):
+                problem = payload_problem(rec["kind"], rec.get("payload"))
+                if problem is None and not isinstance(rec.get("meta"), dict):
+                    problem = "meta is not an object"
+                if problem is not None:
+                    raise StoreError(StoreErrorCode.IMPORT_INVALID, "Bundle record is malformed.", details={"seq": i, "problem": problem})
             prev = rec["hash"]
         if prev != header.get("head"):
             raise StoreError(StoreErrorCode.IMPORT_INVALID, "Bundle head does not match header.")
+        self._precheck_import(records)
         counts = {"stored": 0, "duplicate": 0, "skipped": 0}
         for rec in records:
             kind, payload = rec["kind"], rec["payload"]
-            if kind == "receipt":
-                res = self.ingest_receipt(payload, source="import")
-            elif kind == "artifact":
-                res = self.ingest_artifact(payload)
-            elif kind == "event":
-                if payload["type"] == "cancelled" and (
-                    payload["operation_id"] in self.index.by_operation or self._cancellation(payload["operation_id"])
-                ):
-                    counts["duplicate"] += 1
+            try:
+                if kind == "receipt":
+                    res = self.ingest_receipt(payload, source="import")
+                elif kind == "artifact":
+                    res = self.ingest_artifact(payload)
+                elif kind == "event":
+                    res = self._import_event(payload, rec["meta"])
+                else:  # retention / recovery records describe the source store, not executions
+                    counts["skipped"] += 1
                     continue
-                if any(e["payload"]["event_id"] == payload["event_id"] for e in self.index.events):
-                    counts["duplicate"] += 1
-                    continue
-                self._append("event", payload, {**rec.get("meta", {}), "source": "import"})
-                res = {"status": "stored"}
-            else:  # retention / recovery records describe the source store, not executions
-                counts["skipped"] += 1
-                continue
+            except StoreError as exc:
+                # Only a concurrent writer can get here after the pre-check; say exactly what was imported.
+                exc.details["imported_before_failure"] = dict(counts)
+                exc.details["failed_seq"] = rec["seq"]
+                raise
             counts[res["status"]] += 1
         return counts
 
+    def _import_event(self, payload: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
+        def check() -> dict[str, Any] | None:
+            op = payload["operation_id"]
+            if payload["type"] == "cancelled" and (op in self.index.by_operation or self._cancellation(op)):
+                return {"status": "duplicate"}
+            if any(e["payload"]["event_id"] == payload["event_id"] for e in self.index.events):
+                return {"status": "duplicate"}
+            return None
+
+        record = self._append("event", payload, {**meta, "source": "import"}, check)
+        return {"status": "duplicate"} if record.get("status") == "duplicate" else {"status": "stored"}
+
+    def _precheck_import(self, records: list[dict[str, Any]]) -> None:
+        """Raise the error the import would hit part-way, before anything is written (OV-52)."""
+        if not self.read_only:
+            self._load_if_changed(repair=False)
+        receipts: dict[str, Any] = {}
+        operations: dict[str, str] = {}
+        artifacts: dict[str, Any] = {}
+        for rec in records:
+            kind, payload = rec["kind"], rec["payload"]
+            if kind == "receipt":
+                try:
+                    doc = check_envelope(payload, "receipt")
+                except BluxError as exc:
+                    raise StoreError(
+                        StoreErrorCode.INVALID_RECORD,
+                        "Not a valid blux.receipt.",
+                        details={"seq": rec["seq"], "contract_error": exc.to_document()},
+                    ) from None
+                stored, _meta = self._privacy(doc)
+                rid, op = doc["receipt_id"], doc["operation_id"]
+                existing = self.index.receipts.get(rid)
+                same = (existing is not None and existing["payload"] == stored) or receipts.get(rid) == stored
+                if not same and (existing is not None or rid in receipts):
+                    raise StoreError(
+                        StoreErrorCode.RECEIPT_CONFLICT,
+                        "receipt_id already stored with different content.",
+                        details={"receipt_id": rid, "seq": rec["seq"], "imported_before_failure": {"stored": 0}},
+                    )
+                other = self.index.by_operation.get(op) or operations.get(op)
+                if not same and other is not None:
+                    raise StoreError(
+                        StoreErrorCode.RECEIPT_CONFLICT,
+                        "operation_id already has a receipt.",
+                        details={"operation_id": op, "receipt_id": other, "seq": rec["seq"], "imported_before_failure": {"stored": 0}},
+                    )
+                receipts[rid], operations[op] = stored, rid
+            elif kind == "artifact":
+                try:
+                    doc = check_envelope(payload, "artifact")
+                except BluxError as exc:
+                    raise StoreError(
+                        StoreErrorCode.INVALID_RECORD,
+                        "Not a valid blux.artifact.",
+                        details={"seq": rec["seq"], "contract_error": exc.to_document()},
+                    ) from None
+                stored, _meta = self._privacy(doc)
+                aid = doc["artifact_id"]
+                existing = self.index.artifacts.get(aid)
+                known = existing["payload"] if existing is not None else artifacts.get(aid)
+                if known is not None and known != stored:
+                    raise StoreError(
+                        StoreErrorCode.RECEIPT_CONFLICT,
+                        "artifact_id already stored with different content.",
+                        details={"artifact_id": aid, "seq": rec["seq"], "imported_before_failure": {"stored": 0}},
+                    )
+                artifacts[aid] = stored
+        for op in operations:
+            if self._cancellation(op) is not None and op not in self.index.by_operation:
+                raise StoreError(
+                    StoreErrorCode.ALREADY_FINISHED,
+                    "Operation was cancelled before this receipt.",
+                    details={"operation_id": op, "imported_before_failure": {"stored": 0}},
+                )
+
     # ------------------------------------------------------------------ retention
     def apply_retention(self, *, now: datetime | None = None) -> dict[str, Any]:
-        """Compact the log, dropping records older than the policy allows. The one sanctioned rewrite."""
+        """Compact the log, dropping records older than the policy allows. The one sanctioned rewrite.
+
+        The new chain ends with its own `retention` record (what was removed, the cutoffs, and the head and length
+        of the chain it replaces) and is installed with one atomic rename, so a crash leaves either the old log or
+        the new one, never an unrecorded removal (OV-52).
+        """
         now = now or datetime.now(timezone.utc)
         cutoffs = {k: (now - timedelta(days=v)) for k, v in self.policy.keep_days.items() if v is not None}
         if not cutoffs:
@@ -586,30 +867,37 @@ class ReceiptStore:
                     removed[r["kind"]] = removed.get(r["kind"], 0) + 1
             if not removed:
                 return {"removed": {}, "kept": len(self.index.records)}
+            cut = {k: v.isoformat().replace("+00:00", "Z") for k, v in cutoffs.items()}
+            summary = {
+                "removed": removed,
+                "cutoffs": cut,
+                "previous_head": self.index.head,
+                "previous_records": len(self.index.records),
+            }
             fresh = Index()
+            lines = []
+            for kind, at, payload, meta in [
+                *((r["kind"], r["at"], r["payload"], r["meta"]) for r in keep),
+                ("retention", utc_now(), summary, {}),
+            ]:
+                body = {"seq": len(fresh.records) + 1, "kind": kind, "at": at, "payload": payload, "meta": meta, "prev": fresh.head}
+                new = {**body, "hash": _record_hash(body)}
+                lines.append(canonical_json(new) + "\n")
+                _IndexBuilder.apply(fresh, new)
             tmp = self.log_path.with_suffix(".compact")
             with tmp.open("wb") as fh:
-                for r in keep:
-                    body = {
-                        "seq": len(fresh.records) + 1,
-                        "kind": r["kind"],
-                        "at": r["at"],
-                        "payload": r["payload"],
-                        "meta": r["meta"],
-                        "prev": fresh.head,
-                    }
-                    new = {**body, "hash": _record_hash(body)}
-                    fh.write((canonical_json(new) + "\n").encode("utf-8"))
-                    _IndexBuilder.apply(fresh, new)
+                fh.write("".join(lines).encode("utf-8"))
                 fh.flush()
                 os.fsync(fh.fileno())
+            # The anchor names both heads while the rename is in flight; a reader accepts either.
+            self._write_head(pending={"seq": len(fresh.records), "hash": fresh.head})
             os.replace(tmp, self.log_path)
+            _fsync_dir(self.root)
             self.index = fresh
             self._good_offset = self.log_path.stat().st_size
             self._log_size = self._good_offset
-        cut = {k: v.isoformat().replace("+00:00", "Z") for k, v in cutoffs.items()}
-        self._append("retention", {"removed": removed, "cutoffs": cut})
-        self._prune_blobs()
+            self._write_head()
+            self._prune_blobs()
         return {"removed": removed, "kept": len(keep)}
 
     def _prune_blobs(self) -> None:
@@ -622,17 +910,20 @@ class ReceiptStore:
 
 
 class _IndexBuilder:
-    """Reads log.jsonl, verifies the chain and builds the in-memory index."""
+    """Reads log.jsonl, verifies the chain, the payloads and the head anchor, and builds the in-memory index."""
 
-    def __init__(self, store: ReceiptStore) -> None:
+    def __init__(self, store: ReceiptStore, *, full: bool = False) -> None:
         self.store = store
+        self.full = full
         self.index = Index()
         self.good_offset = 0
+        self.unterminated = False
 
     def build(self) -> VerifyReport:
         problems: list[dict[str, Any]] = []
         torn = False
         lines = list(self.store._iter_lines())
+        hashes: list[str] = []
         for n, (offset, raw, has_nl) in enumerate(lines, 1):
             last = n == len(lines)
             try:
@@ -645,7 +936,7 @@ class _IndexBuilder:
                 else:
                     problems.append({"line": n, "reason": "unparseable"})
                 break
-            reason = None
+            reason, detail = None, None
             if rec["seq"] != len(self.index.records) + 1:
                 reason = "sequence_gap"
             elif rec["prev"] != self.index.head:
@@ -656,12 +947,58 @@ class _IndexBuilder:
                 reason = "unknown_kind"
             elif not has_nl and not last:
                 reason = "unparseable"
+            elif not isinstance(rec["meta"], dict):
+                reason, detail = "invalid_payload", "meta is not an object"
+            else:
+                detail = payload_problem(rec["kind"], rec["payload"])
+                if detail is None and self.full:
+                    detail = self._contract_problem(rec)
+                reason = "invalid_payload" if detail else None
             if reason:
-                problems.append({"line": n, "seq": rec.get("seq"), "reason": reason})
+                problems.append({"line": n, "seq": rec.get("seq"), "reason": reason, **({"detail": detail} if detail else {})})
                 break
             self.apply(self.index, rec)
+            hashes.append(rec["hash"])
             self.good_offset = offset + len(raw)
+            self.unterminated = not has_nl
+        if not problems or torn:
+            problems += self._anchor_problems(hashes)
         return VerifyReport(ok=not problems, records=len(self.index.records), head=self.index.head, problems=problems, torn_tail=torn)
+
+    @staticmethod
+    def _contract_problem(rec: dict[str, Any]) -> str | None:
+        if rec["kind"] not in ("receipt", "artifact"):
+            return None
+        try:
+            check_envelope(rec["payload"], rec["kind"])
+        except BluxError as exc:
+            return f"Contract v1: {exc.message}"[:200]
+        return None
+
+    def _anchor_problems(self, hashes: list[str]) -> list[dict[str, Any]]:
+        """Compare the chain with head.json. A store written before OV-52 has no anchor until its next write."""
+        path = self.store.head_path
+        if not path.exists():
+            return []
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            heads = [{"seq": doc["seq"], "hash": doc["hash"]}]
+            if isinstance(doc.get("pending"), dict):
+                heads.append({"seq": doc["pending"]["seq"], "hash": doc["pending"]["hash"]})
+        except (OSError, ValueError, KeyError, TypeError):
+            return [{"reason": "anchor_unreadable"}]
+        for head in heads:
+            seq = head["seq"]
+            if not isinstance(seq, int) or isinstance(seq, bool) or seq < 0:
+                return [{"reason": "anchor_unreadable"}]
+            # The anchor is written after its record, so the log may be ahead of it (a crash in between, or a
+            # writer from before OV-52), but never shorter, and the anchored record must still be there.
+            if seq == 0 or (seq <= len(hashes) and hashes[seq - 1] == head["hash"]):
+                return []
+        anchored = heads[0]
+        if anchored["seq"] > len(hashes):
+            return [{"reason": "truncated", "anchored_seq": anchored["seq"], "records": len(hashes)}]
+        return [{"reason": "anchor_mismatch", "anchored_seq": anchored["seq"], "records": len(hashes)}]
 
     @staticmethod
     def apply(index: Index, rec: dict[str, Any]) -> None:

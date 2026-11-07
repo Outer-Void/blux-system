@@ -54,6 +54,10 @@ store.ingest_receipt(receipt_doc)  # validates via blux-sdk, redacts, appends
 graph = build_graph(store, session_id=...)
 ```
 
+`blux-system verify` checks the hash chain, the `head.json` anchor (a shortened or swapped log), every
+payload and every artifact blob; `--expect-head` ties it to a head kept elsewhere. The chain is not signed,
+so it detects corruption and stale copies, not a deliberate rewrite by someone who can write the store.
+
 See [docs/STORE.md](docs/STORE.md) for the storage format, immutability, corruption handling, redaction and
 retention.
 

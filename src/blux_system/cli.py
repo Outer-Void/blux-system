@@ -128,9 +128,9 @@ def _dispatch_store(args: argparse.Namespace, stdin: TextIO) -> tuple[int, Any]:
         items = timeline(_open(args, read_only=True), operation_id=args.operation, session_id=args.session)
         return EXIT_OK, {"count": len(items), "timeline": items}
     if cmd == "verify":
-        report = ReceiptStore(Path(_store_path(args)), read_only=True).verify() if Path(_store_path(args), "store.json").is_file() else None
-        if report is None:
-            raise StoreError(StoreErrorCode.STORE_NOT_FOUND, "No BLUX System store here.")
+        root = Path(_store_path(args))
+        ReceiptStore.check_marker(root)  # STORE_NOT_FOUND, or STORE_CORRUPT for a bad or newer format marker
+        report = ReceiptStore(root, read_only=True).verify(expect_head=args.expect_head)
         return (EXIT_OK if report.ok else EXIT_FAILED), report.to_document()
     if cmd == "export":
         store = _open(args, read_only=True)
@@ -207,7 +207,8 @@ def build_parser() -> argparse.ArgumentParser:
     g = p.add_mutually_exclusive_group()
     g.add_argument("--operation")
     g.add_argument("--session")
-    store_cmd("verify", "verify the log hash chain (read-only)")
+    p = store_cmd("verify", "verify the chain, head anchor, payloads and artifact blobs (read-only)")
+    p.add_argument("--expect-head", help="a record hash kept elsewhere (e.g. an export header); fail unless the chain contains it")
     p = store_cmd("export", "write a verifiable JSONL bundle")
     p.add_argument("out")
     p = store_cmd("import", "import a bundle (idempotent)")
