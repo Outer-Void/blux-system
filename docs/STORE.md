@@ -54,6 +54,7 @@ was redacted, so a fingerprint can never reveal redacted content.
 | Bad `store.json`, unreadable `retention.json` | `STORE_CORRUPT` (`details.reason`). A store written by a newer format is `unsupported_version` and is neither read nor written |
 | Artifact blob changed or deleted | `verify` reports `blob_mismatch` / `blob_missing`; re-ingesting the artifact with its bytes repairs the blob |
 | Writer lock held for more than 10 s | `STORE_LOCKED` |
+| Disk full, a file-size limit or a permission error while reading or writing | `STORE_IO_ERROR` with `details.errno` and `details.error` (for example `EFBIG`, `ENOSPC`). Nothing is reported as stored; a half-written last record is a torn tail, repaired by the next write. Before OV-62 the process died with a traceback and no JSON document |
 
 `blux-system verify` runs read-only and checks the chain, the anchor, every payload and every blob.
 `verify --expect-head HASH` also fails unless the chain contains a record hash kept elsewhere, such as the

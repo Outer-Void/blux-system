@@ -8,8 +8,11 @@ The legacy `snapshot`, `receipt` and `replay` commands keep their original file-
 from __future__ import annotations
 
 import argparse
+import errno
 import os
+import signal
 import sys
+import threading
 from pathlib import Path
 from typing import Any, NoReturn, TextIO
 
@@ -244,6 +247,9 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, stdout: 
     if getattr(args, "legacy", None):
         return int(args.legacy(args))
     out = stdout or sys.stdout
+    if hasattr(signal, "SIGXFSZ") and threading.current_thread() is threading.main_thread():
+        # A file-size limit then fails the write with EFBIG (STORE_IO_ERROR) instead of killing the process silently.
+        signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
     try:
         code, doc = _dispatch_store(args, stdin or sys.stdin)
     except StoreError as exc:
@@ -252,6 +258,17 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, stdout: 
         code, doc = (
             EXIT_FAILED,
             StoreError(StoreErrorCode.INVALID_RECORD, exc.message, details={"contract_error": exc.to_document()}).to_document(),
+        )
+    except OSError as exc:
+        # OV-62 (F135): a full disk or a size limit used to escape as a traceback with no JSON document. The store
+        # stays consistent (a torn tail is repaired by the next write); the caller gets a document it can act on.
+        code, doc = (
+            EXIT_FAILED,
+            StoreError(
+                StoreErrorCode.STORE_IO_ERROR,
+                f"The store could not be read or written: {exc.strerror or exc}.",
+                details={"errno": exc.errno, "error": errno.errorcode.get(exc.errno or 0, "UNKNOWN")},
+            ).to_document(),
         )
     out.write(dumps_json(doc, pretty=args.pretty) + "\n")
     out.flush()

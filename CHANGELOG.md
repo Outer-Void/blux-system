@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased: OV-62
+Found by the OV-62 fault-injection drills. Tests fail on 26f2240 (`tests/test_fault_drills.py`).
+- **Fix (F135): an I/O failure broke the one-document protocol.** A full disk or a file-size limit during
+  `ingest` (or any command) escaped as a Python traceback with nothing on stdout, and a size limit could kill the
+  process outright. It is now `STORE_IO_ERROR` (`details.errno`, `details.error`), exit 1; `SIGXFSZ` is
+  ignored so the limit surfaces as `EFBIG`. Nothing is reported as stored, and the next write repairs the torn
+  tail, as before.
+
 ## Unreleased: OV-52
 Found by the OV-52 review of BLUX System as the evidence authority (crashes, tampering, partial failure,
 retention, migrations). Each fix has a test that fails on f7f8ede (`tests/test_evidence_authority.py`). The

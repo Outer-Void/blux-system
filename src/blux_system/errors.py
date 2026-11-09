@@ -19,6 +19,8 @@ class StoreErrorCode(str, enum.Enum):
     ARTIFACT_HASH_MISMATCH = "ARTIFACT_HASH_MISMATCH"
     IMPORT_INVALID = "IMPORT_INVALID"
     INVALID_POLICY = "INVALID_POLICY"
+    # OV-62 (F135): the operating system refused a read or write (disk full, file too large, permission).
+    STORE_IO_ERROR = "STORE_IO_ERROR"
 
 
 class StoreError(Exception):
